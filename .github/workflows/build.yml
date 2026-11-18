@@ -1,0 +1,68 @@
+name: build
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch: {}
+env:
+  WAILS_VERSION: v2.10.1
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.23" }
+      - run: go test ./core
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.23" }
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+      - run: go mod tidy
+      - run: go vet ./...
+      - run: wails build -platform windows/amd64 -clean -trimpath -ldflags "-s -w"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cruveno-Setup-Windows
+          path: build/bin/Cruveno-Setup.exe
+          if-no-files-found: error
+  mac:
+    needs: test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.23" }
+      - run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+      - run: go mod tidy
+      - run: wails build -platform darwin/universal -clean -trimpath -ldflags "-s -w"
+      - name: DMG bauen (ad-hoc signiert, noch nicht notarisiert)
+        run: |
+          APP="$(ls -d build/bin/*.app | head -1)"
+          mv "$APP" "build/bin/Cruveno Installer.app"
+          APP="build/bin/Cruveno Installer.app"
+          codesign --force --deep -s - "$APP"
+          mkdir -p dmg && cp -R "$APP" dmg/ && ln -s /Applications dmg/Applications
+          hdiutil create -volname "Cruveno Installer" -srcfolder dmg -ov -format UDZO Cruveno-Installer.dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cruveno-Installer-Mac
+          path: Cruveno-Installer.dmg
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/Cruveno-Setup.exe
+            out/Cruveno-Installer.dmg
