@@ -145,7 +145,7 @@ func StartIni(st *State, password string) []string {
 	}
 	l = append(l, "Server="+st.Server, "KeepPrivate=1", "NewsEnable=0", "CertInstall=0", "",
 		"[Charts]", "ProfileLast=Default", "",
-		"[Experts]", "AllowLiveTrading=1", "AllowDllImport=0", "Enabled=1", "Account=0", "Profile=0",
+		"[Experts]", "AllowLiveTrading=1", "AllowDllImport=1", "Enabled=1", "Account=0", "Profile=0",
 		"WebRequest=1", "WebRequestUrl="+WebRequestURLs, "",
 		"[StartUp]", "Expert="+st.Expert, "ExpertParameters="+st.SetName, "Symbol="+st.Symbol, "Period="+st.Period)
 	return l
