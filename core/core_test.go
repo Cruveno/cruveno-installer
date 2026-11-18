@@ -67,7 +67,8 @@ func (f *fakePortal) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func setup(t *testing.T) (*fakePortal, string) {
-	SymWaitTries = 1
+	ProbeWait = 100 * time.Millisecond
+	FakeSyms = map[string]bool{"BTCUSD": true}
 	t.Helper()
 	d := filepath.Join(t.TempDir(), "Cruveno")
 	os.MkdirAll(d, 0o755)
@@ -282,8 +283,8 @@ func TestUninstall(t *testing.T) {
 func TestExpertCPUAndCopySkip(t *testing.T) {
 	_, d := setup(t)
 	src := filepath.Join(d, "fake-mt5")
-	os.MkdirAll(filepath.Join(src, "Bases", "X"), 0o755)
-	os.WriteFile(filepath.Join(src, "Bases", "X", "big.hcc"), []byte("x"), 0o644)
+	os.MkdirAll(filepath.Join(src, "Bases", "OldSrv"), 0o755)
+	os.WriteFile(filepath.Join(src, "Bases", "OldSrv", "big.hcc"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(src, "Config", "accounts.dat"), []byte("x"), 0o644)
 	dir := InstanceDir("BTC-GOOD")
 	go func() {
@@ -295,38 +296,47 @@ func TestExpertCPUAndCopySkip(t *testing.T) {
 	if err != nil || res.ExpertErr != "cpu" || res.Expert {
 		t.Fatalf("cpu: %v %+v", err, res)
 	}
-	if fileExists(filepath.Join(dir, "Bases")) || fileExists(filepath.Join(dir, "Config", "accounts.dat")) || !fileExists(filepath.Join(dir, "Config", "servers.dat")) {
-		t.Fatal("copy skip")
+	if fileExists(filepath.Join(dir, "Bases", "OldSrv")) || fileExists(filepath.Join(dir, "Config", "accounts.dat")) || !fileExists(filepath.Join(dir, "Config", "servers.dat")) {
+		t.Fatal("copy skip", fileExists(filepath.Join(dir, "Bases", "OldSrv")), fileExists(filepath.Join(dir, "Config", "accounts.dat")), fileExists(filepath.Join(dir, "Config", "servers.dat")))
 	}
 }
 
-func TestSymbols(t *testing.T) {
-	d := t.TempDir()
-	sd := filepath.Join(d, "Bases", "UltimaMarkets-Live 1", "symbols")
-	os.MkdirAll(sd, 0o755)
-	blob := []byte{1, 2, 3}
-	for _, s := range []string{"AUDCAD+", "BTCUSD+", "BTCUSDT+", "ETHUSD+", "GER40+", "Crypto\\BTC"} {
-		blob = append(blob, utf16le(s)[2:]...)
-		blob = append(blob, 0, 0, 7, 9)
+func TestSymbolProbe(t *testing.T) {
+	_, d := setup(t)
+	FakeSyms = map[string]bool{"BTCUSD+": true}
+	dir := InstanceDir("BTC-GOOD")
+	fakeLogin(dir, "'1': authorized on Srv through X")
+	var evs []Ev
+	res, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "Srv", Password: "p"}, func(e Ev) { evs = append(evs, e) })
+	if err != nil || res.Symbol != "BTCUSD+" {
+		t.Fatalf("probe %v %+v", err, res)
 	}
-	os.WriteFile(filepath.Join(sd, "symbols-35768809.dat"), blob, 0o644)
-	c := BrokerSymbols(d, "UltimaMarkets-Live 1", "btc")
-	if got := PickSymbol(c, "BTCUSD", "btc"); got != "BTCUSD+" {
-		t.Fatalf("btc %v -> %q", c, got)
+	st := LoadState("BTC-GOOD-GOOD-GOOD")
+	if st.Symbol != "BTCUSD+" || !strings.Contains(ReadUTF16(IniPath(st)), "Symbol=BTCUSD+") {
+		t.Fatal("state/ini")
 	}
-	if got := PickSymbol(BrokerSymbols(d, "UltimaMarkets-Live 1", "dax"), "GER40", "dax"); got != "GER40+" {
-		t.Fatalf("dax %q", got)
-	}
-	cases := map[string][]string{"BTCUSD": {"BTCUSDm", "BTCUSD", "BTCUSD.r"}, "BTCUSD.r": {"BTCUSDT", "BTCUSD.r"}, "BTCUSDm": {"BTCUSDT", "BTCUSDm"}, "": {"ETHUSD"}}
-	for want, cs := range cases {
-		if got := PickSymbol(cs, "BTCUSD", "btc"); got != want {
-			t.Fatalf("%v -> %q want %q", cs, got, want)
+	seen := false
+	for _, e := range evs {
+		if e.Text == "sym:BTCUSD+" {
+			seen = true
 		}
+	}
+	if !seen {
+		t.Fatal("ui event")
+	}
+	_ = d
+	// Admin-Zuordnung hat Vorrang
+	if c := SymbolCandidates("btc", "UltimaMarkets-Live 1", "BTCUSD", []SymMap{{Match: "ultima", Btc: "BTCUSD+"}}); c[0] != "BTCUSD+" || c[1] != "BTCUSD" {
+		t.Fatalf("cands %v", c)
+	}
+	if c := SymbolCandidates("dax", "X", "GER40", nil); c[0] != "GER40" || c[1] != "GER40+" {
+		t.Fatalf("dax %v", c)
 	}
 }
 
 func TestAgentFixesSymbol(t *testing.T) {
 	_, _ = setup(t)
+	FakeSyms = map[string]bool{}
 	dir := InstanceDir("BTC-GOOD")
 	fakeLogin(dir, "'1': authorized on Srv through X")
 	if _, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "Srv", Password: "p"}, func(Ev) {}); err != nil {
@@ -335,9 +345,8 @@ func TestAgentFixesSymbol(t *testing.T) {
 	if LoadState("BTC-GOOD-GOOD-GOOD").Symbol != "BTCUSD" {
 		t.Fatal("start symbol")
 	}
-	sd := filepath.Join(dir, "Bases", "Srv", "symbols")
-	os.MkdirAll(sd, 0o755)
-	os.WriteFile(filepath.Join(sd, "symbols-1.dat"), append(append([]byte{0}, utf16le("BTCUSD+")[2:]...), 0, 0), 0o644)
+	// Kunde oeffnet spaeter BTCUSD+ selbst -> Kursdaten vorhanden
+	os.MkdirAll(filepath.Join(dir, "Bases", "Srv", "history", "BTCUSD+"), 0o755)
 	now = func() time.Time { return time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC) }
 	defer func() { now = time.Now }()
 	n := Starts

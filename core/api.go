@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const Version = "1.0.4"
+const Version = "1.0.5"
 
 // Portal: Standard app.cruveno.com, zum Testen ueber CRUVENO_PORTAL umstellbar.
 func Portal() string {
@@ -49,6 +49,13 @@ type Broker struct {
 	Mac  string `json:"mac"`
 }
 
+// SymMap: Zuordnung aus dem Admin, z. B. "UltimaMarkets" -> BTC "BTCUSD+", DAX "GER40+"
+type SymMap struct {
+	Match string `json:"match"`
+	Btc   string `json:"btc"`
+	Dax   string `json:"dax"`
+}
+
 type CheckResp struct {
 	OK          bool     `json:"ok"`
 	Code        string   `json:"code"`
@@ -70,6 +77,7 @@ type CheckResp struct {
 	Prot        *Prot    `json:"prot"`
 	ProtDefault *Prot    `json:"protDefault"`
 	Brokers     []Broker `json:"brokers"`
+	Symbols     []SymMap `json:"symbols"` // Admin: Server-Teil -> Symbol
 	Online      bool     `json:"online"`
 	LastSeen    string   `json:"lastSeen"`
 	Accounts    []string `json:"accounts"`

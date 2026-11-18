@@ -62,18 +62,17 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 			Status(ctx, st.Key, "online", "", st.Login)
 		}
 	}
-	// Chart-Symbol pruefen: gibt es das Symbol beim Broker nicht (BTCUSD statt BTCUSD+), auf das passende umstellen
+	// Chart-Symbol pruefen: hat MetaTrader fuer st.Symbol keine Kursdaten, aber fuer ein passendes anderes Symbol
+	// (z. B. BTCUSD+ statt BTCUSD), Chart darauf umstellen
 	if !IniHasPassword(st) {
-		if c := BrokerSymbols(st.Dir, st.Server, st.Product); len(c) > 0 {
-			has := false
-			for _, x := range c {
-				if x == st.Symbol {
-					has = true
-				}
-			}
-			if p := PickSymbol(c, st.Symbol, st.Product); !has && p != "" {
-				add("Chart-Symbol %s -> %s", st.Symbol, p)
-				st.Symbol = p
+		var maps []SymMap
+		if err == nil && c.OK {
+			maps = c.Symbols
+		}
+		if !fileExists(filepath.Join(historyDir(st.Dir, st.Server), st.Symbol)) {
+			if k := KnownSymbol(st.Dir, st.Server, SymbolCandidates(st.Product, st.Server, st.Symbol, maps)); k != "" && k != st.Symbol {
+				add("Chart-Symbol %s -> %s", st.Symbol, k)
+				st.Symbol = k
 				WriteIni(st, "")
 				st.Pending = addFlag(st.Pending, "sym")
 			}

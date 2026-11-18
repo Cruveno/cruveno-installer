@@ -79,13 +79,13 @@ ${state}</div>${foot("", `<button class="btn p" data-act="next" ${ok ? "" : "dis
 ${foot(`<button class="btn s" data-act="back">← ${T("Zurück", "Back")}</button>`, `<button class="btn g" data-act="install" ${ready ? "" : "disabled"}>${T("Installieren", "Install")}</button>`)}`;
   },
   install() {
-    const sym = (S.chk && S.chk.symbol) || "BTCUSD";
+    const sym = S.sym || (S.chk && S.chk.symbol) || "BTCUSD";
     const L = [
       ["lic", T("Lizenz und Einstellungen geladen", "License and settings loaded")],
       ["mt5", mt5Text()],
       ["ea", T(`${(S.chk && S.chk.productName) || "AlgoBreak"} und Einstellungen übernommen`, `${(S.chk && S.chk.productName) || "AlgoBreak"} and settings applied`)],
       ["login", T("Mit dem Brokerkonto anmelden", "Sign in with the broker account")],
-      ["chart", T(`Chart ${sym} öffnen, Algo Trading einschalten`, `Open chart ${sym}, enable algo trading`)],
+      ["chart", S.probe ? T(`Symbol beim Broker suchen: ${S.probe} …`, `Finding the broker symbol: ${S.probe} …`) : T(`Chart ${sym} öffnen, Algo Trading einschalten`, `Open chart ${sym}, enable algo trading`)],
       ["agent", T("Cruveno-Dienst für Einstellungen und Updates", "Cruveno service for settings and updates")],
       ["online", T("Erste Meldung des EAs abwarten", "Wait for the EA's first report")],
     ];
@@ -190,6 +190,8 @@ const el = (n) => { const m = Math.floor(n / 60), s = n % 60; return `${m}:${Str
 function onProg(e) {
   if (S.view !== "install") { S.view = "install"; }
   if (e.task === "mt5" && e.text) S.sub = e.text;
+  if (e.task === "chart" && e.text && e.text.startsWith("sym:")) { S.sym = e.text.slice(4); S.probe = ""; }
+  if (e.task === "chart" && e.text && e.text.startsWith("probe:")) S.probe = e.text.slice(6);
   if (S.tasks[e.task] !== e.state) { S.tasks[e.task] = e.state; if (e.state !== "run") S.times[e.task] = el(Math.round((Date.now() - S.started) / 1000)); }
   S.pct = Math.max(S.pct, e.pct || 0);
   render();

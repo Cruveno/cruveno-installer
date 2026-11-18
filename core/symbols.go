@@ -1,123 +1,149 @@
 package core
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
+	"time"
 )
 
 // Broker-Symbole: jeder Broker benennt BTC/DAX anders (BTCUSD, BTCUSD+, BTCUSD.r, BTCUSDm, GER40, DE40.cash ...).
-// Nach der Anmeldung legt MetaTrader die Symbolliste unter Bases/<Server>/symbols ab (UTF-16-Namen in Binaerdateien).
+// Die Symbolliste von MetaTrader ist verschluesselt. Erkennbar ist aber, fuer welches Symbol MetaTrader Kursdaten
+// anlegt: Bases/<Server>/history/<Symbol> entsteht nur, wenn es das Symbol beim Broker gibt.
 
-var symRe = map[string]*regexp.Regexp{
-	"btc": regexp.MustCompile(`^(BTC|XBT)[/_-]?USD([.+#_\-]?[A-Za-z0-9]{0,6}|[.+#_\-])?$`),
-	"dax": regexp.MustCompile(`^(GER|DE|DAX|GERMANY)[ _-]?(40|30)?([.+#_\-]?[A-Za-z0-9]{0,6}|[.+#_\-])?$`),
-}
+var symSuffixes = []string{"", "+", ".r", "m", ".a", "#", ".", "_", ".pro", ".raw", "-", ".i", ".ecn", ".c", "pro"}
 
-// utf16Strings: druckbare ASCII-Folgen in UTF-16 LE (3..32 Zeichen)
-func utf16Strings(b []byte) []string {
+// SymbolCandidates: Admin-Zuordnung zuerst, dann Wunsch, dann gaengige Schreibweisen
+func SymbolCandidates(product, server, want string, maps []SymMap) []string {
 	var out []string
-	var cur []byte
-	flush := func() {
-		if len(cur) >= 3 && len(cur) <= 32 {
-			out = append(out, string(cur))
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
 		}
-		cur = cur[:0]
+		for _, x := range out {
+			if x == s {
+				return
+			}
+		}
+		out = append(out, s)
 	}
-	for start := 0; start < 2; start++ { // Namen koennen auf geraden oder ungeraden Positionen beginnen
-		for i := start; i+1 < len(b); i += 2 {
-			c, h := b[i], b[i+1]
-			if h == 0 && c >= 0x21 && c <= 0x7e {
-				cur = append(cur, c)
+	for _, m := range maps {
+		if m.Match != "" && strings.Contains(strings.ToLower(server), strings.ToLower(m.Match)) {
+			if product == "dax" {
+				add(m.Dax)
 			} else {
-				flush()
+				add(m.Btc)
 			}
 		}
-		flush()
+	}
+	add(want)
+	bases := []string{"BTCUSD"}
+	if product == "dax" {
+		bases = []string{"GER40", "DE40", "GER40Cash", "DE40Cash"}
+	}
+	for _, b := range bases {
+		for _, suf := range symSuffixes {
+			add(b + suf)
+		}
+	}
+	if product == "dax" {
+		add("GER40.cash")
+		add("DE40.cash")
+		add("DAX40")
+		add("GER30")
+		add("DE30")
+	} else {
+		add("XBTUSD")
+		add("BTCUSDT")
 	}
 	return out
 }
 
-// BrokerSymbols: alle Symbolnamen des Servers, die zum Produkt passen
-func BrokerSymbols(dir, server, product string) []string {
-	re := symRe[product]
-	if re == nil {
-		return nil
+func historyDir(dir, server string) string {
+	h := filepath.Join(dir, "Bases", server, "history")
+	if fileExists(h) {
+		return h
 	}
-	seen := map[string]bool{}
-	var out []string
-	roots := []string{filepath.Join(dir, "Bases", server, "symbols")}
-	if ents, err := os.ReadDir(filepath.Join(dir, "Bases")); err == nil { // Servername kann abweichen (Gross/Klein)
+	if ents, err := os.ReadDir(filepath.Join(dir, "Bases")); err == nil {
 		for _, e := range ents {
-			if e.IsDir() && strings.EqualFold(e.Name(), server) && e.Name() != server {
-				roots = append(roots, filepath.Join(dir, "Bases", e.Name(), "symbols"))
+			if e.IsDir() && strings.EqualFold(e.Name(), server) {
+				return filepath.Join(dir, "Bases", e.Name(), "history")
 			}
 		}
 	}
-	for _, r := range roots {
-		files, _ := os.ReadDir(r)
-		for _, f := range files {
-			if f.IsDir() {
-				continue
-			}
-			b, err := os.ReadFile(filepath.Join(r, f.Name()))
-			if err != nil || len(b) > 64<<20 {
-				continue
-			}
-			for _, s := range utf16Strings(b) {
-				if re.MatchString(s) && !seen[s] {
-					seen[s] = true
-					out = append(out, s)
-				}
-			}
-		}
-	}
-	return out
+	return h
 }
 
-// PickSymbol: bevorzugt das gewuenschte Symbol (z. B. BTCUSD), sonst gleiche Basis mit Endung (BTCUSD+, BTCUSD.r),
-// dann Basis mit Buchstaben-Endung (BTCUSDm), USDT zuletzt. "" = nichts passendes gefunden.
-func PickSymbol(cands []string, want, product string) string {
-	if len(cands) == 0 {
-		return ""
-	}
-	bases := map[string][]string{"btc": {"BTCUSD", "XBTUSD", "BTC/USD", "BTC-USD", "BTC_USD"}, "dax": {"GER40", "DE40", "DAX40", "GER30", "DE30", "DAX", "GERMANY40", "GERMANY"}}[product]
-	if want != "" {
-		bases = append([]string{want}, bases...)
-	}
-	rank := func(s string) int {
-		for i, b := range bases {
-			if strings.EqualFold(s, b) {
-				return i * 10
-			}
-			if len(s) > len(b) && strings.EqualFold(s[:len(b)], b) {
-				suf := s[len(b):]
-				switch {
-				case strings.ContainsAny(suf[:1], ".+#_-"):
-					return i*10 + 1
-				case product == "btc" && strings.HasPrefix(strings.ToUpper(suf), "T"):
-					return i*10 + 8
-				default:
-					return i*10 + 3
-				}
-			}
+// KnownSymbol: erstes Kandidaten-Symbol, fuer das MetaTrader bereits Kursdaten hat
+func KnownSymbol(dir, server string, cands []string) string {
+	h := historyDir(dir, server)
+	for _, c := range cands {
+		if fileExists(filepath.Join(h, c)) {
+			return c
 		}
-		return 1000
 	}
-	sort.SliceStable(cands, func(i, j int) bool {
-		ri, rj := rank(cands[i]), rank(cands[j])
-		if ri != rj {
-			return ri < rj
-		}
-		return len(cands[i]) < len(cands[j])
-	})
-	if rank(cands[0]) >= 1000 {
-		return ""
-	}
-	return cands[0]
+	return ""
 }
 
-// SymWaitTries: wie oft (je 2 s) nach der Anmeldung auf die Symbolliste gewartet wird
-var SymWaitTries = 15
+// ProbeWait: wie lange je Versuch auf Kursdaten gewartet wird
+var ProbeWait = 25 * time.Second
+
+// ResolveSymbol: laeuft MetaTrader mit st.Symbol und gibt es das Symbol nicht, werden die Kandidaten der Reihe nach
+// geoeffnet (Neustart je Versuch), bis MetaTrader Kursdaten anlegt. Rueckgabe: Symbol, ob umgestellt wurde.
+func ResolveSymbol(ctx context.Context, st *State, maps []SymMap, note func(string)) (string, bool, error) {
+	cands := SymbolCandidates(st.Product, st.Server, st.Symbol, maps)
+	wait := func(sym string) bool {
+		for t := time.Duration(0); t < ProbeWait; t += time.Second {
+			if fileExists(filepath.Join(historyDir(st.Dir, st.Server), sym)) {
+				return true
+			}
+			if !sleepCtx(ctx, time.Second) {
+				return false
+			}
+		}
+		return false
+	}
+	switchTo := func(sym string) error {
+		StopTerminal(st.Dir)
+		st.Symbol = sym
+		WriteIni(st, "")
+		SaveState(st)
+		ClearCharts(st.Dir)
+		return StartTerminal(st)
+	}
+	// schon bekannt (z. B. erneute Installation)?
+	if k := KnownSymbol(st.Dir, st.Server, cands); k != "" {
+		if k == st.Symbol {
+			return k, false, nil
+		}
+		note("sym:" + k)
+		return k, true, switchTo(k)
+	}
+	orig := st.Symbol
+	for i, c := range cands {
+		if ctx.Err() != nil {
+			return "", false, ctx.Err()
+		}
+		if c != st.Symbol {
+			note(fmt.Sprintf("probe:%s", c))
+			if err := switchTo(c); err != nil {
+				return "", false, err
+			}
+		}
+		if wait(c) {
+			note("sym:" + c)
+			return c, c != orig, nil
+		}
+		if i >= 14 {
+			break
+		}
+	}
+	// nichts gefunden: zurueck auf den Wunsch, der Dienst prueft spaeter erneut
+	if st.Symbol != orig {
+		switchTo(orig)
+	}
+	return "", false, nil
+}

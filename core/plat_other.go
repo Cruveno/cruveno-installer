@@ -38,8 +38,15 @@ func StopTerminal(dir string) bool {
 	os.Remove(filepath.Join(dir, ".running"))
 	return was
 }
+
+// FakeSyms: Symbole, die der simulierte Broker kennt (MetaTrader legt dafuer Kursdaten an)
+var FakeSyms = map[string]bool{"BTCUSD": true}
+
 func StartTerminal(st *State) error {
 	Starts++
+	if FakeSyms[st.Symbol] {
+		os.MkdirAll(filepath.Join(st.Dir, "Bases", st.Server, "history", st.Symbol), 0o755)
+	}
 	return os.WriteFile(filepath.Join(st.Dir, ".running"), nil, 0o644)
 }
 func OpenTerminal(st *State) error { return StartTerminal(st) }
