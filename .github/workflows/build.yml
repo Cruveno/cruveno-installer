@@ -66,3 +66,23 @@ jobs:
           files: |
             out/Cruveno-Setup.exe
             out/Cruveno-Installer.dmg
+  publish:
+    # Version mit Tag -> beide Dateien ins Cruveno-Portal (Admin → Installer, Kunden-Download /download/win|mac)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Ins Portal hochladen
+        env:
+          TOKEN: ${{ secrets.INSTALLER_UPLOAD_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::warning::Secret INSTALLER_UPLOAD_TOKEN fehlt – Dateien bitte in Admin → Installer von Hand hochladen."; exit 0; fi
+          VER="${GITHUB_REF_NAME#v}"
+          for pair in "win:out/Cruveno-Setup.exe" "mac:out/Cruveno-Installer.dmg"; do
+            OS="${pair%%:*}"; F="${pair#*:}"
+            curl -fsS -X POST --data-binary @"$F" -H "Authorization: Bearer $TOKEN" -H "content-type: application/octet-stream" \
+              "https://app.cruveno.com/inst/v1/upload?os=$OS&ver=$VER"
+            echo
+          done
