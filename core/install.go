@@ -194,6 +194,28 @@ func startAndVerify(ctx context.Context, st *State, c *CheckResp, pwSet bool, em
 		res.LoginRes = "ok"
 		go Status(context.Background(), st.Key, "login_ok", "", st.Login)
 		e("login", "ok", 82, "")
+		// Symbol des Brokers ermitteln (BTCUSD vs. BTCUSD+ ...) und Chart ggf. umstellen
+		sym := ""
+		for i := 0; i < SymWaitTries && sym == ""; i++ { // Symbolliste kommt kurz nach der Anmeldung
+			sym = PickSymbol(BrokerSymbols(st.Dir, st.Server, st.Product), st.Symbol, st.Product)
+			if sym == "" && !sleepCtx(ctx, 2*time.Second) {
+				return nil, ctx.Err()
+			}
+		}
+		if sym != "" && sym != st.Symbol {
+			old := st.Symbol
+			StopTerminal(st.Dir)
+			st.Symbol = sym
+			res.Symbol = sym
+			WriteIni(st, "")
+			SaveState(st)
+			go Status(context.Background(), st.Key, "agent", "Symbol beim Broker: "+sym+" (statt "+old+")", st.Login)
+			since = time.Now()
+			ClearCharts(st.Dir)
+			if err := StartTerminal(st); err != nil {
+				return nil, fmt.Errorf("MetaTrader konnte nicht gestartet werden: %v", err)
+			}
+		}
 	case "bad":
 		StopTerminal(st.Dir)
 		WriteIni(st, "")

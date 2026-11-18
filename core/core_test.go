@@ -67,6 +67,7 @@ func (f *fakePortal) handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func setup(t *testing.T) (*fakePortal, string) {
+	SymWaitTries = 1
 	t.Helper()
 	d := filepath.Join(t.TempDir(), "Cruveno")
 	os.MkdirAll(d, 0o755)
@@ -296,5 +297,53 @@ func TestExpertCPUAndCopySkip(t *testing.T) {
 	}
 	if fileExists(filepath.Join(dir, "Bases")) || fileExists(filepath.Join(dir, "Config", "accounts.dat")) || !fileExists(filepath.Join(dir, "Config", "servers.dat")) {
 		t.Fatal("copy skip")
+	}
+}
+
+func TestSymbols(t *testing.T) {
+	d := t.TempDir()
+	sd := filepath.Join(d, "Bases", "UltimaMarkets-Live 1", "symbols")
+	os.MkdirAll(sd, 0o755)
+	blob := []byte{1, 2, 3}
+	for _, s := range []string{"AUDCAD+", "BTCUSD+", "BTCUSDT+", "ETHUSD+", "GER40+", "Crypto\\BTC"} {
+		blob = append(blob, utf16le(s)[2:]...)
+		blob = append(blob, 0, 0, 7, 9)
+	}
+	os.WriteFile(filepath.Join(sd, "symbols-35768809.dat"), blob, 0o644)
+	c := BrokerSymbols(d, "UltimaMarkets-Live 1", "btc")
+	if got := PickSymbol(c, "BTCUSD", "btc"); got != "BTCUSD+" {
+		t.Fatalf("btc %v -> %q", c, got)
+	}
+	if got := PickSymbol(BrokerSymbols(d, "UltimaMarkets-Live 1", "dax"), "GER40", "dax"); got != "GER40+" {
+		t.Fatalf("dax %q", got)
+	}
+	cases := map[string][]string{"BTCUSD": {"BTCUSDm", "BTCUSD", "BTCUSD.r"}, "BTCUSD.r": {"BTCUSDT", "BTCUSD.r"}, "BTCUSDm": {"BTCUSDT", "BTCUSDm"}, "": {"ETHUSD"}}
+	for want, cs := range cases {
+		if got := PickSymbol(cs, "BTCUSD", "btc"); got != want {
+			t.Fatalf("%v -> %q want %q", cs, got, want)
+		}
+	}
+}
+
+func TestAgentFixesSymbol(t *testing.T) {
+	_, _ = setup(t)
+	dir := InstanceDir("BTC-GOOD")
+	fakeLogin(dir, "'1': authorized on Srv through X")
+	if _, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "Srv", Password: "p"}, func(Ev) {}); err != nil {
+		t.Fatal(err)
+	}
+	if LoadState("BTC-GOOD-GOOD-GOOD").Symbol != "BTCUSD" {
+		t.Fatal("start symbol")
+	}
+	sd := filepath.Join(dir, "Bases", "Srv", "symbols")
+	os.MkdirAll(sd, 0o755)
+	os.WriteFile(filepath.Join(sd, "symbols-1.dat"), append(append([]byte{0}, utf16le("BTCUSD+")[2:]...), 0, 0), 0o644)
+	now = func() time.Time { return time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC) }
+	defer func() { now = time.Now }()
+	n := Starts
+	AgentOnce(context.Background())
+	st := LoadState("BTC-GOOD-GOOD-GOOD")
+	if st.Symbol != "BTCUSD+" || !strings.Contains(ReadUTF16(IniPath(st)), "Symbol=BTCUSD+") || Starts != n+1 {
+		t.Fatalf("agent symbol: %+v starts %d", st, Starts-n)
 	}
 }

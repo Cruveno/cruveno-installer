@@ -62,6 +62,23 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 			Status(ctx, st.Key, "online", "", st.Login)
 		}
 	}
+	// Chart-Symbol pruefen: gibt es das Symbol beim Broker nicht (BTCUSD statt BTCUSD+), auf das passende umstellen
+	if !IniHasPassword(st) {
+		if c := BrokerSymbols(st.Dir, st.Server, st.Product); len(c) > 0 {
+			has := false
+			for _, x := range c {
+				if x == st.Symbol {
+					has = true
+				}
+			}
+			if p := PickSymbol(c, st.Symbol, st.Product); !has && p != "" {
+				add("Chart-Symbol %s -> %s", st.Symbol, p)
+				st.Symbol = p
+				WriteIni(st, "")
+				st.Pending = addFlag(st.Pending, "sym")
+			}
+		}
+	}
 	running := IsRunning(st.Dir)
 	if st.Pending != "" && (!QuietHour(now()) || !running) {
 		if running {
