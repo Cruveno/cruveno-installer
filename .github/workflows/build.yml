@@ -43,7 +43,7 @@ jobs:
       - name: DMG bauen (ad-hoc signiert, noch nicht notarisiert)
         run: |
           APP="$(ls -d build/bin/*.app | head -1)"
-          mv "$APP" "build/bin/Cruveno Installer.app"
+          [ "$APP" = "build/bin/Cruveno Installer.app" ] || mv "$APP" "build/bin/Cruveno Installer.app"
           APP="build/bin/Cruveno Installer.app"
           codesign --force --deep -s - "$APP"
           mkdir -p dmg && cp -R "$APP" dmg/ && ln -s /Applications dmg/Applications
