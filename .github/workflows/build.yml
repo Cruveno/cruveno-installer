@@ -67,11 +67,12 @@ jobs:
             out/Cruveno-Setup.exe
             out/Cruveno-Installer.dmg
   publish:
-    # Version mit Tag -> beide Dateien ins Cruveno-Portal (Admin → Installer, Kunden-Download /download/win|mac)
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Neue Versionsnummer (core/api.go) auf main -> beide Dateien ins Cruveno-Portal (Admin → Installer, Kunden-Download /download/win|mac)
+    if: github.ref == 'refs/heads/main'
     needs: [windows, mac]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
       - name: Ins Portal hochladen
@@ -79,7 +80,13 @@ jobs:
           TOKEN: ${{ secrets.INSTALLER_UPLOAD_TOKEN }}
         run: |
           if [ -z "$TOKEN" ]; then echo "::warning::Secret INSTALLER_UPLOAD_TOKEN fehlt – Dateien bitte in Admin → Installer von Hand hochladen."; exit 0; fi
-          VER="${GITHUB_REF_NAME#v}"
+          VER="$(sed -n 's/^const Version = "\(.*\)"/\1/p' core/api.go)"
+          echo "Version $VER"
+          for os in win mac; do
+            LIVE="$(curl -sSI "https://app.cruveno.com/download/$os" | tr -d '\r' | sed -n 's/^x-cruveno-version: //Ip')"
+            if [ "$LIVE" != "$VER" ]; then NEED=1; fi
+          done
+          if [ -z "$NEED" ]; then echo "Version $VER liegt schon im Portal."; exit 0; fi
           for pair in "win:out/Cruveno-Setup.exe" "mac:out/Cruveno-Installer.dmg"; do
             OS="${pair%%:*}"; F="${pair#*:}"
             curl -fsS -X POST --data-binary @"$F" -H "Authorization: Bearer $TOKEN" -H "content-type: application/octet-stream" \
