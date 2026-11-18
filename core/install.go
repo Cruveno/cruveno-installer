@@ -126,6 +126,14 @@ func Install(ctx context.Context, rq InstallReq, emit func(Ev)) (*Result, error)
 	st := &State{Version: Version, Key: key, Product: c.Product, ProductName: c.ProductName, Login: strings.TrimSpace(rq.Login), Server: strings.TrimSpace(rq.Server),
 		Symbol: nz(c.Symbol, "BTCUSD"), Period: nz(c.Period, "H1"), Expert: nz(c.Expert, `Cruveno\Cruveno_BTC_Daily-Breakout_EA`), EaFile: eaFile, EaVersion: c.EaVersion,
 		ServerURL: c.ServerUrl, Lang: nz(rq.Lang, "de"), SetName: "Cruveno_" + suffix + ".set", Dir: dir, Prot: c.Effective(), Broker: rq.Broker, Installed: time.Now().UTC().Format(time.RFC3339)}
+	// Admin-Zuordnung (Servername -> Symbol) gleich beim ersten Start verwenden; sonst ein bekanntes Symbol der Instanz
+	if cs := SymbolCandidates(st.Product, st.Server, st.Symbol, c.Symbols); len(cs) > 0 {
+		if k := KnownSymbol(dir, st.Server, cs); k != "" {
+			st.Symbol = k
+		} else {
+			st.Symbol = cs[0]
+		}
+	}
 	if old != nil && st.Login == old.Login && old.AuthOK {
 		st.AuthOK = true
 	}

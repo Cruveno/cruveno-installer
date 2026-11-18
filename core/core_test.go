@@ -50,7 +50,7 @@ func (f *fakePortal) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "key": b["key"], "product": "btc", "productName": "AlgoBreak BTC", "termsOk": f.terms,
 			"symbol": "BTCUSD", "period": "H1", "expert": `Cruveno\Cruveno_BTC_Daily-Breakout_EA`, "eaFile": "Cruveno_BTC_Daily-Breakout_EA.ex5",
-			"eaVersion": f.eaVer, "serverUrl": "https://btc.cruveno.com", "prot": f.prot, "protDefault": map[string]float64{"risk": 1, "day": 3, "tot": 10}, "online": f.online})
+			"eaVersion": f.eaVer, "symbols": []map[string]string{{"match": "UltimaMarkets", "btc": "BTCUSD+", "dax": "GER40+"}}, "serverUrl": "https://btc.cruveno.com", "prot": f.prot, "protDefault": map[string]float64{"risk": 1, "day": 3, "tot": 10}, "online": f.online})
 	case r.URL.Path == "/inst/v1/status":
 		var b map[string]string
 		json.NewDecoder(r.Body).Decode(&b)
@@ -354,5 +354,18 @@ func TestAgentFixesSymbol(t *testing.T) {
 	st := LoadState("BTC-GOOD-GOOD-GOOD")
 	if st.Symbol != "BTCUSD+" || !strings.Contains(ReadUTF16(IniPath(st)), "Symbol=BTCUSD+") || Starts != n+1 {
 		t.Fatalf("agent symbol: %+v starts %d", st, Starts-n)
+	}
+}
+
+func TestMappedSymbolFirstStart(t *testing.T) {
+	f, _ := setup(t)
+	_ = f
+	FakeSyms = map[string]bool{"BTCUSD+": true}
+	dir := InstanceDir("BTC-GOOD")
+	fakeLogin(dir, "'1': authorized on UltimaMarkets-Live 1 through X")
+	n := Starts
+	res, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "UltimaMarkets-Live 1", Password: "p"}, func(Ev) {})
+	if err != nil || res.Symbol != "BTCUSD+" || Starts != n+1 {
+		t.Fatalf("mapped first start: %v %+v starts %d", err, res, Starts-n)
 	}
 }
