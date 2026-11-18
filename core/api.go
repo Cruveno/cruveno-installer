@@ -93,6 +93,11 @@ func (c *CheckResp) Effective() Prot {
 
 var ErrOffline = errors.New("offline")
 
+// ServerErr: Server erreicht, aber keine gueltige Antwort (z. B. Adresse fehlt noch, 404/500)
+type ServerErr struct{ Status int }
+
+func (e *ServerErr) Error() string { return fmt.Sprintf("server %d", e.Status) }
+
 var client = &http.Client{Timeout: 60 * time.Second}
 
 func ua() string { return "Cruveno-Installer/" + Version + " (" + OSName() + ")" }
@@ -113,7 +118,7 @@ func postJSON(ctx context.Context, path string, body any, out any) (int, error) 
 	data, _ := io.ReadAll(io.LimitReader(res.Body, 1<<20))
 	if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {
-			return res.StatusCode, fmt.Errorf("Antwort unlesbar (%d)", res.StatusCode)
+			return res.StatusCode, &ServerErr{Status: res.StatusCode}
 		}
 	}
 	return res.StatusCode, nil

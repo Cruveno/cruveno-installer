@@ -44,6 +44,7 @@ type CheckOut struct {
 	*core.CheckResp
 	Err     string `json:"err"`
 	Offline bool   `json:"offline"`
+	Status  int    `json:"httpStatus,omitempty"`
 	Saved   *Saved `json:"saved"`
 }
 
@@ -62,6 +63,10 @@ func (a *App) Check(key, lang string) CheckOut {
 	}
 	c, err := core.Check(a.ctx, k, lang)
 	if err != nil {
+		var se *core.ServerErr
+		if errors.As(err, &se) {
+			return CheckOut{Err: "server", Status: se.Status}
+		}
 		return CheckOut{Err: "offline", Offline: true}
 	}
 	out := CheckOut{CheckResp: c}
