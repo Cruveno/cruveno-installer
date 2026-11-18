@@ -34,6 +34,8 @@ type fakePortal struct {
 	bodies []string
 	eaGets int
 	terms  bool
+	stop   bool
+	where  string
 }
 
 func (f *fakePortal) handler(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +52,7 @@ func (f *fakePortal) handler(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "key": b["key"], "product": "btc", "productName": "AlgoBreak BTC", "termsOk": f.terms,
 			"symbol": "BTCUSD", "period": "H1", "expert": `Cruveno\Cruveno_BTC_Daily-Breakout_EA`, "eaFile": "Cruveno_BTC_Daily-Breakout_EA.ex5",
-			"eaVersion": f.eaVer, "symbols": []map[string]string{{"match": "UltimaMarkets", "btc": "BTCUSD+", "dax": "GER40+"}}, "serverUrl": "https://btc.cruveno.com", "prot": f.prot, "protDefault": map[string]float64{"risk": 1, "day": 3, "tot": 10}, "online": f.online})
+			"eaVersion": f.eaVer, "stopLocal": f.stop, "where": f.where, "symbols": []map[string]string{{"match": "UltimaMarkets", "btc": "BTCUSD+", "dax": "GER40+"}}, "serverUrl": "https://btc.cruveno.com", "prot": f.prot, "protDefault": map[string]float64{"risk": 1, "day": 3, "tot": 10}, "online": f.online})
 	case r.URL.Path == "/inst/v1/status":
 		var b map[string]string
 		json.NewDecoder(r.Body).Decode(&b)
@@ -367,5 +369,41 @@ func TestMappedSymbolFirstStart(t *testing.T) {
 	res, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "UltimaMarkets-Live 1", Password: "p"}, func(Ev) {})
 	if err != nil || res.Symbol != "BTCUSD+" || Starts != n+1 {
 		t.Fatalf("mapped first start: %v %+v starts %d", err, res, Starts-n)
+	}
+}
+
+func TestAgentCloudStop(t *testing.T) {
+	f, _ := setup(t)
+	dir := InstanceDir("BTC-GOOD")
+	fakeLogin(dir, "'1': authorized on Srv through X")
+	if _, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "Srv", Password: "p"}, func(Ev) {}); err != nil {
+		t.Fatal(err)
+	}
+	now = func() time.Time { return time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC) }
+	defer func() { now = time.Now }()
+	f.mu.Lock()
+	f.stop, f.where = true, "fxv"
+	f.mu.Unlock()
+	AgentOnce(context.Background())
+	if IsRunning(dir) || !fileExists(filepath.Join(dir, "cruveno_pause.txt")) {
+		t.Fatal("cloud: lokal muss beendet und pausiert sein")
+	}
+	AgentOnce(context.Background()) // bleibt aus
+	if IsRunning(dir) {
+		t.Fatal("cloud: darf nicht neu starten")
+	}
+	f.mu.Lock()
+	f.stop, f.where = false, "self"
+	f.mu.Unlock()
+	AgentOnce(context.Background())
+	if !IsRunning(dir) || fileExists(filepath.Join(dir, "cruveno_pause.txt")) {
+		t.Fatal("zurueck: muss wieder laufen")
+	}
+	// Handpause bleibt unberuehrt
+	StopTerminal(dir)
+	os.WriteFile(filepath.Join(dir, "cruveno_pause.txt"), []byte("manuell"), 0o644)
+	AgentOnce(context.Background())
+	if IsRunning(dir) {
+		t.Fatal("handpause")
 	}
 }

@@ -29,7 +29,14 @@ func AgentOnce(ctx context.Context) []string {
 
 func agentOne(ctx context.Context, st *State) (log []string) {
 	add := func(f string, a ...any) { log = append(log, st.Key[:3]+": "+fmt.Sprintf(f, a...)) }
-	if fileExists(filepath.Join(st.Dir, "cruveno_pause.txt")) || !fileExists(filepath.Join(st.Dir, "terminal64.exe")) {
+	if !fileExists(filepath.Join(st.Dir, "terminal64.exe")) {
+		return
+	}
+	// Pause: von Hand (beliebiger Inhalt) -> nichts tun; "cloud" -> Betrieb laeuft im FXV-VPS (siehe unten)
+	pauseF := filepath.Join(st.Dir, "cruveno_pause.txt")
+	pb, perr := os.ReadFile(pauseF)
+	cloudPause := perr == nil && strings.TrimSpace(string(pb)) == "cloud"
+	if perr == nil && !cloudPause {
 		return
 	}
 	// Passwort aus der Startdatei entfernen, sobald MT5 die Anmeldung gespeichert hat
@@ -41,6 +48,28 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 	}
 	restart := false
 	c, err := Check(ctx, st.Key, st.Lang)
+	// Betrieb in der Cloud: AlgoBreak laeuft im VPS bei FXVirtualNet -> hier beenden, nie zwei Plaetze gleichzeitig
+	if err == nil && c.OK && c.StopLocal {
+		if IsRunning(st.Dir) {
+			StopTerminal(st.Dir)
+			add("MetaTrader beendet – AlgoBreak läuft jetzt in der Cloud (FXVirtualNet)")
+		}
+		if !cloudPause {
+			os.WriteFile(pauseF, []byte("cloud"), 0o644)
+		}
+		if len(log) > 0 {
+			Status(ctx, st.Key, "agent", strings.Join(log, "; "), st.Login)
+		}
+		SaveState(st)
+		return
+	}
+	if cloudPause {
+		if err != nil || !c.OK || c.Where == "fxv" {
+			return // weiter Cloud oder keine Auskunft: nichts starten
+		}
+		os.Remove(pauseF)
+		add("Betrieb wieder auf diesem Rechner")
+	}
 	if err == nil && c.OK {
 		if p := c.Effective(); !p.Same(st.Prot) {
 			st.Prot = p

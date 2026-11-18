@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const Version = "1.0.6"
+const Version = "1.0.7"
 
 // Portal: Standard app.cruveno.com, zum Testen ueber CRUVENO_PORTAL umstellbar.
 func Portal() string {
@@ -77,7 +77,9 @@ type CheckResp struct {
 	Prot        *Prot    `json:"prot"`
 	ProtDefault *Prot    `json:"protDefault"`
 	Brokers     []Broker `json:"brokers"`
-	Symbols     []SymMap `json:"symbols"` // Admin: Server-Teil -> Symbol
+	Symbols     []SymMap `json:"symbols"`   // Admin: Server-Teil -> Symbol
+	Where       string   `json:"where"`     // self | fxv | ""
+	StopLocal   bool     `json:"stopLocal"` // AlgoBreak laeuft im FXV-VPS: hier beenden
 	Online      bool     `json:"online"`
 	LastSeen    string   `json:"lastSeen"`
 	Accounts    []string `json:"accounts"`
