@@ -214,18 +214,35 @@ func EverAuthorized(dir, login string) bool {
 	return LoginResult(dir, login, time.Time{}) == "ok"
 }
 
-// ExpertLoaded: EA am Chart geladen (Journal oder Experten-Protokoll)
-func ExpertLoaded(dir, eaName string, since time.Time) bool {
+// ExpertState: "ok" (EA am Chart geladen), "cpu" (EA verlangt AVX2, der Prozessor bzw. Rosetta kann das nicht),
+// "fail" (Laden fehlgeschlagen) oder "" (noch nichts). Wertet nur Zeilen ab dem letzten Start dieser Instanz aus.
+func ExpertState(dir, eaName string, since time.Time) string {
 	base := strings.TrimSuffix(eaName, ".ex5")
+	res := ""
 	for _, d := range []string{filepath.Join(dir, "logs"), filepath.Join(dir, "MQL5", "Logs")} {
 		for _, f := range recentLogs(d, since) {
 			t := ReadUTF16(f)
-			if strings.Contains(t, base) && strings.Contains(t, "loaded successfully") {
-				return true
+			if i := strings.LastIndex(t, "Startup\tsuccessfully initialized"); i > 0 && d == filepath.Join(dir, "logs") {
+				t = t[i:]
+			}
+			for _, ln := range strings.Split(t, "\n") {
+				switch {
+				case strings.Contains(ln, base) && strings.Contains(ln, "loaded successfully"):
+					return "ok"
+				case strings.Contains(ln, "AVX2 required") || (strings.Contains(ln, "CPU architecture does not allow") && strings.Contains(ln, base)):
+					res = "cpu"
+				case res == "" && strings.Contains(ln, "loading of "+base) && strings.Contains(ln, "failed"):
+					res = "fail"
+				}
 			}
 		}
 	}
-	return false
+	return res
+}
+
+// ExpertLoaded: EA am Chart geladen
+func ExpertLoaded(dir, eaName string, since time.Time) bool {
+	return ExpertState(dir, eaName, since) == "ok"
 }
 
 func recentLogs(d string, since time.Time) []string {
@@ -271,6 +288,20 @@ func ClearCharts(dir string) {
 }
 
 // CopyDir: komplette MT5-Installation in die eigene Instanz kopieren
+// copySkip: nicht in die eigene Instanz uebernehmen – Kursdaten, alte Protokolle, Tester, Charts und gespeicherte
+// Konten der Original-Installation (sonst meldet sich die AlgoBreak-Instanz ggf. mit einem anderen Konto an)
+var copySkip = []string{"Bases", "logs", "Tester", "MQL5/Logs", "MQL5/Profiles/Charts", "MQL5/Profiles/Tester", "Config/accounts.dat", "Config/terminal.ini", "Config/common.ini"}
+
+func skipRel(rel string) bool {
+	r := filepath.ToSlash(rel)
+	for _, s := range copySkip {
+		if strings.EqualFold(r, s) || strings.HasPrefix(strings.ToLower(r), strings.ToLower(s)+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func CopyDir(src, dst string, prog func(n int)) error {
 	n := 0
 	return filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
@@ -278,6 +309,12 @@ func CopyDir(src, dst string, prog func(n int)) error {
 			return err
 		}
 		rel, _ := filepath.Rel(src, p)
+		if rel != "." && skipRel(rel) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		t := filepath.Join(dst, rel)
 		if d.IsDir() {
 			return os.MkdirAll(t, 0o755)

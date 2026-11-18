@@ -29,15 +29,16 @@ type InstallReq struct {
 }
 
 type Result struct {
-	Login    string `json:"login"`
-	Server   string `json:"server"`
-	Symbol   string `json:"symbol"`
-	Prot     Prot   `json:"prot"`
-	Online   bool   `json:"online"`
-	Expert   bool   `json:"expert"`
-	LoginRes string `json:"loginRes"` // ok, timeout
-	Dir      string `json:"dir"`
-	Portal   string `json:"portal"`
+	Login     string `json:"login"`
+	Server    string `json:"server"`
+	Symbol    string `json:"symbol"`
+	Prot      Prot   `json:"prot"`
+	Online    bool   `json:"online"`
+	Expert    bool   `json:"expert"`
+	ExpertErr string `json:"expertErr"` // cpu, fail
+	LoginRes  string `json:"loginRes"`  // ok, timeout
+	Dir       string `json:"dir"`
+	Portal    string `json:"portal"`
 }
 
 // ErrLogin: Broker hat die Anmeldung abgelehnt (Installation selbst ist fertig)
@@ -206,16 +207,36 @@ func startAndVerify(ctx context.Context, st *State, c *CheckResp, pwSet bool, em
 
 	// 4) EA am Chart
 	e("chart", "run", 83, "")
-	for i := 0; i < 20 && !res.Expert; i++ {
-		res.Expert = ExpertLoaded(st.Dir, st.EaFile, since)
-		if !res.Expert && !sleepCtx(ctx, 1500*time.Millisecond) {
+	for i := 0; i < 30 && res.ExpertErr == ""; i++ { // bis 45 s
+		switch ExpertState(st.Dir, st.EaFile, since) {
+		case "ok":
+			res.Expert = true
+		case "cpu":
+			res.ExpertErr = "cpu"
+		case "fail":
+			if i >= 6 { // kurz warten, ob ein zweiter Versuch klappt
+				res.ExpertErr = "fail"
+			}
+		}
+		if res.Expert {
+			break
+		}
+		if !sleepCtx(ctx, 1500*time.Millisecond) {
 			return nil, ctx.Err()
 		}
 	}
-	go Status(context.Background(), st.Key, "running", "", st.Login)
-	if res.Expert {
+	switch {
+	case res.Expert:
+		go Status(context.Background(), st.Key, "running", "", st.Login)
 		e("chart", "ok", 88, "")
-	} else {
+	case res.ExpertErr == "cpu":
+		Status(context.Background(), st.Key, "error", "EA verlangt AVX2, Prozessor unterstuetzt es nicht ("+OSName()+")", st.Login)
+		e("chart", "fail", 88, "cpu")
+	case res.ExpertErr == "fail":
+		Status(context.Background(), st.Key, "error", "EA konnte nicht geladen werden", st.Login)
+		e("chart", "fail", 88, "fail")
+	default:
+		go Status(context.Background(), st.Key, "running", "", st.Login)
 		e("chart", "warn", 88, "")
 	}
 
@@ -229,7 +250,7 @@ func startAndVerify(ctx context.Context, st *State, c *CheckResp, pwSet bool, em
 
 	// 6) Erste Meldung des EAs
 	e("online", "run", 93, "")
-	for i := 0; i < 24 && !res.Online; i++ { // bis 2 Min.
+	for i := 0; i < 24 && !res.Online && res.ExpertErr == ""; i++ { // bis 2 Min.
 		if c2, err := Check(ctx, st.Key, st.Lang); err == nil && c2.OK && c2.Online {
 			res.Online = true
 			break

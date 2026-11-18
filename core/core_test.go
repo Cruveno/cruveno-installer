@@ -277,3 +277,24 @@ func TestUninstall(t *testing.T) {
 		t.Fatal("uninstall")
 	}
 }
+
+func TestExpertCPUAndCopySkip(t *testing.T) {
+	_, d := setup(t)
+	src := filepath.Join(d, "fake-mt5")
+	os.MkdirAll(filepath.Join(src, "Bases", "X"), 0o755)
+	os.WriteFile(filepath.Join(src, "Bases", "X", "big.hcc"), []byte("x"), 0o644)
+	os.WriteFile(filepath.Join(src, "Config", "accounts.dat"), []byte("x"), 0o644)
+	dir := InstanceDir("BTC-GOOD")
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		os.MkdirAll(filepath.Join(dir, "logs"), 0o755)
+		os.WriteFile(filepath.Join(dir, "logs", "20261118.log"), utf16le("A\t0\t1\tStartup\tsuccessfully initialized from start config\r\nB\t0\t1\tNetwork\t'5': authorized on X through\r\nC\t2\t1\tMQL5\tyour CPU architecture does not allow to run the file 'Cruveno_BTC_Daily-Breakout_EA.ex5': AVX2 required, you have X64 only\r\n"), 0o644)
+	}()
+	res, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "5", Server: "X", Password: "p"}, func(Ev) {})
+	if err != nil || res.ExpertErr != "cpu" || res.Expert {
+		t.Fatalf("cpu: %v %+v", err, res)
+	}
+	if fileExists(filepath.Join(dir, "Bases")) || fileExists(filepath.Join(dir, "Config", "accounts.dat")) || !fileExists(filepath.Join(dir, "Config", "servers.dat")) {
+		t.Fatal("copy skip")
+	}
+}

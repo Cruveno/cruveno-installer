@@ -100,6 +100,15 @@ ${foot(`<span class="meta">${T("Bitte das Fenster offen lassen.", "Please keep t
   },
   done() {
     const r = S.res || {}, p = r.prot || prot(), sym = r.symbol || (S.chk && S.chk.symbol) || "BTCUSD";
+    if (r.expertErr) {   // 1.0.2: Installation fertig, aber der EA laeuft auf diesem Rechner nicht
+      const why = r.expertErr === "cpu"
+        ? T("Die aktuelle EA-Datei verlangt einen Prozessor mit AVX2. Dieser Rechner bzw. MetaTrader auf dem Mac (Rosetta) unterstützt das nicht, deshalb hat MetaTrader den EA nicht geladen.", "The current EA file requires a processor with AVX2. This computer or MetaTrader on the Mac (Rosetta) does not support it, so MetaTrader did not load the EA.")
+        : T("MetaTrader konnte den EA nicht laden.", "MetaTrader could not load the EA.");
+      return `<span class="k">${T("Schritt 4 von 4", "Step 4 of 4")}</span><h1>${T("Installiert – der EA startet noch nicht", "Installed – the EA does not start yet")}</h1>
+<p class="lede">${T("MetaTrader, Anmeldung, Einstellungen und der Cruveno-Dienst sind eingerichtet. Es wird nicht gehandelt.", "MetaTrader, login, settings and the Cruveno service are set up. No trading takes place.")}</p>
+<div class="body"><div class="err">${ICO.infoBad}<span><b>${why}</b> ${T("Cruveno ist automatisch informiert. Sobald eine passende EA-Version bereitsteht, spielt der Cruveno-Dienst sie selbst ein – du musst nichts neu installieren.", "Cruveno has been notified automatically. As soon as a suitable EA version is available, the Cruveno service installs it by itself – no need to reinstall.")}</span></div></div>
+${foot(`<span class="meta">${T("Hilfe", "Help")}: ${SUPPORT}</span>`, `<button class="btn s" data-act="mt5">${T("MetaTrader öffnen", "Open MetaTrader")}</button><button class="btn p" data-act="quit">${T("Schließen", "Close")}</button>`)}`;
+    }
     const live = r.online ? `<span class="live"><i></i>${T("EA ONLINE · ERSTE MELDUNG EMPFANGEN", "EA ONLINE · FIRST REPORT RECEIVED")}</span>` : `<span class="live" style="color:#a87a1d;background:#fff7e6"><i style="background:#F2B84B;box-shadow:0 0 0 4px rgba(242,184,75,.2)"></i>${T("EA STARTET · MELDET SICH IN KÜRZE", "EA STARTING · WILL REPORT SHORTLY")}</span>`;
     const warn = r.loginRes === "timeout" ? `<p class="note">${ICO.info}<span>${T("Der Broker hat die Anmeldung noch nicht bestätigt. Falls MetaTrader nach Login und Passwort fragt: einmal selbst anmelden und „Passwort speichern“ anhaken.", "The broker has not confirmed the login yet. If MetaTrader asks for login and password: sign in once yourself and tick “Save password”.")}</span></p>` : "";
     return `<span class="k">${T("Schritt 4 von 4", "Step 4 of 4")}</span>
