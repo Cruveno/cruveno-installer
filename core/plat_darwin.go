@@ -267,6 +267,7 @@ func InstallAgent() error {
 <key>StartInterval</key><integer>300</integer>
 <key>RunAtLoad</key><true/>
 <key>ProcessType</key><string>Background</string>
+<key>AbandonProcessGroup</key><true/>
 <key>StandardOutPath</key><string>` + filepath.Join(DataDir(), "agent.out") + `</string>
 <key>StandardErrorPath</key><string>` + filepath.Join(DataDir(), "agent.out") + `</string>
 </dict></plist>
