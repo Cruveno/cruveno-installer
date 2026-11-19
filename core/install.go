@@ -36,6 +36,7 @@ type Result struct {
 	Online    bool   `json:"online"`
 	Expert    bool   `json:"expert"`
 	ExpertErr string `json:"expertErr"` // cpu, fail
+	SymMissing string `json:"symMissing,omitempty"` // 1.0.8: z. B. "BTCUSD+" fehlt -> falscher Kontotyp
 	LoginRes  string `json:"loginRes"`  // ok, timeout
 	Dir       string `json:"dir"`
 	Portal    string `json:"portal"`
@@ -203,9 +204,18 @@ func startAndVerify(ctx context.Context, st *State, c *CheckResp, pwSet bool, em
 		go Status(context.Background(), st.Key, "login_ok", "", st.Login)
 		e("login", "ok", 82, "")
 		// Symbol des Brokers ermitteln (BTCUSD vs. BTCUSD+ ...) und Chart ggf. umstellen
-		if sym, changed, err := ResolveSymbol(ctx, st, c.Symbols, func(t string) { e("chart", "run", 82, t) }); err != nil {
+		var sm *SymMissing
+		if sym, changed, err := ResolveSymbol(ctx, st, c.Symbols, func(t string) { e("chart", "run", 82, t) }); errors.As(err, &sm) {
+			st.SymMissing = sm.Want
+			SaveState(st)
+			res.SymMissing = sm.Want
+			Status(context.Background(), st.Key, "sym_missing", sm.Want+" fehlt auf "+st.Server, st.Login)
+			e("chart", "fail", 88, "sym")
+		} else if err != nil {
 			return nil, err
 		} else if sym != "" {
+			st.SymMissing = ""
+			SaveState(st)
 			res.Symbol = sym
 			if changed {
 				since = time.Now()
@@ -224,8 +234,10 @@ func startAndVerify(ctx context.Context, st *State, c *CheckResp, pwSet bool, em
 	}
 
 	// 4) EA am Chart
-	e("chart", "run", 83, "")
-	for i := 0; i < 30 && res.ExpertErr == ""; i++ { // bis 45 s
+	if res.SymMissing == "" {
+		e("chart", "run", 83, "")
+	}
+	for i := 0; i < 30 && res.ExpertErr == "" && res.SymMissing == ""; i++ { // bis 45 s
 		switch ExpertState(st.Dir, st.EaFile, since) {
 		case "ok":
 			res.Expert = true
@@ -244,6 +256,8 @@ func startAndVerify(ctx context.Context, st *State, c *CheckResp, pwSet bool, em
 		}
 	}
 	switch {
+	case res.SymMissing != "":
+		// Meldung ist schon raus (sym_missing); Kunde braucht ein anderes Konto
 	case res.Expert:
 		go Status(context.Background(), st.Key, "running", "", st.Login)
 		e("chart", "ok", 88, "")
@@ -268,7 +282,7 @@ func startAndVerify(ctx context.Context, st *State, c *CheckResp, pwSet bool, em
 
 	// 6) Erste Meldung des EAs
 	e("online", "run", 93, "")
-	for i := 0; i < 24 && !res.Online && res.ExpertErr == ""; i++ { // bis 2 Min.
+	for i := 0; i < 24 && !res.Online && res.ExpertErr == "" && res.SymMissing == ""; i++ { // bis 2 Min.
 		if c2, err := Check(ctx, st.Key, st.Lang); err == nil && c2.OK && c2.Online {
 			res.Online = true
 			break

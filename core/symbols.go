@@ -39,6 +39,11 @@ func SymbolCandidates(product, server, want string, maps []SymMap) []string {
 			}
 		}
 	}
+	// 1.0.8: Admin-Zuordnung ist verbindlich (z. B. Ultima Markets nur BTCUSD+ auf RAW ECN) - kein Ausweichen auf andere
+	// Schreibweisen, sonst handelt der EA auf dem falschen Kontotyp
+	if len(out) > 0 {
+		return out
+	}
 	add(want)
 	bases := []string{"BTCUSD"}
 	if product == "dax" {
@@ -91,12 +96,37 @@ func KnownSymbol(dir, server string, cands []string) string {
 // ProbeWait: wie lange je Versuch auf Kursdaten gewartet wird
 var ProbeWait = 25 * time.Second
 
+// SymMissing: die Admin-Zuordnung verlangt ein Symbol, das es auf diesem Konto nicht gibt (falscher Kontotyp)
+type SymMissing struct{ Want string }
+
+func (e *SymMissing) Error() string { return "symbol missing: " + e.Want }
+
+// mappedSymbol: Symbol aus der Admin-Zuordnung fuer diesen Server ("" = keine Zuordnung)
+func mappedSymbol(product, server string, maps []SymMap) string {
+	for _, m := range maps {
+		if m.Match != "" && strings.Contains(strings.ToLower(server), strings.ToLower(m.Match)) {
+			if product == "dax" && m.Dax != "" {
+				return m.Dax
+			}
+			if product != "dax" && m.Btc != "" {
+				return m.Btc
+			}
+		}
+	}
+	return ""
+}
+
 // ResolveSymbol: laeuft MetaTrader mit st.Symbol und gibt es das Symbol nicht, werden die Kandidaten der Reihe nach
 // geoeffnet (Neustart je Versuch), bis MetaTrader Kursdaten anlegt. Rueckgabe: Symbol, ob umgestellt wurde.
 func ResolveSymbol(ctx context.Context, st *State, maps []SymMap, note func(string)) (string, bool, error) {
 	cands := SymbolCandidates(st.Product, st.Server, st.Symbol, maps)
+	strict := mappedSymbol(st.Product, st.Server, maps)
+	limit := ProbeWait
+	if strict != "" {
+		limit = 3 * ProbeWait // nur ein Kandidat: Kursdaten duerfen laenger dauern
+	}
 	wait := func(sym string) bool {
-		for t := time.Duration(0); t < ProbeWait; t += time.Second {
+		for t := time.Duration(0); t < limit; t += time.Second {
 			if fileExists(filepath.Join(historyDir(st.Dir, st.Server), sym)) {
 				return true
 			}
@@ -144,6 +174,9 @@ func ResolveSymbol(ctx context.Context, st *State, maps []SymMap, note func(stri
 	// nichts gefunden: zurueck auf den Wunsch, der Dienst prueft spaeter erneut
 	if st.Symbol != orig {
 		switchTo(orig)
+	}
+	if strict != "" {
+		return "", false, &SymMissing{Want: strict}
 	}
 	return "", false, nil
 }

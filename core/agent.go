@@ -107,6 +107,12 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 			}
 		}
 	}
+	// 1.0.8: fehlte das Symbol der Admin-Zuordnung und sind jetzt Kursdaten da (z. B. nur langsam geladen), Entwarnung melden
+	if st.SymMissing != "" && fileExists(filepath.Join(historyDir(st.Dir, st.Server), st.SymMissing)) {
+		add("Symbol %s jetzt vorhanden", st.SymMissing)
+		st.SymMissing = ""
+		Status(ctx, st.Key, "running", "", st.Login)
+	}
 	running := IsRunning(st.Dir)
 	if st.Pending != "" && (!QuietHour(now()) || !running) {
 		if running {

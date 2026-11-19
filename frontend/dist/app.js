@@ -100,6 +100,14 @@ ${foot(`<span class="meta">${T("Bitte das Fenster offen lassen.", "Please keep t
   },
   done() {
     const r = S.res || {}, p = r.prot || prot(), sym = r.symbol || (S.chk && S.chk.symbol) || "BTCUSD";
+    if (r.symMissing) {   // 1.0.8: Symbol der Admin-Zuordnung fehlt -> falscher Kontotyp (Ultima Markets: RAW ECN)
+      const ultima = /ultima/i.test(r.server || "");
+      return `<span class="k">${T("Fast geschafft · ein Detail fehlt", "Almost done · one detail is missing")}</span><h1>${ultima ? T("Dieses Konto ist kein RAW-ECN-Konto", "This account is not a RAW ECN account") : T(`Auf diesem Konto gibt es kein ${esc(r.symMissing)}`, `There is no ${esc(r.symMissing)} on this account`)}</h1>
+<p class="lede">${T(`MetaTrader läuft, aber auf Konto ${esc(r.login ? "••" + String(r.login).slice(-4) : "")} gibt es das Symbol ${esc(r.symMissing)} nicht. Es wird nicht gehandelt.`, `MetaTrader is running, but account ${esc(r.login ? "••" + String(r.login).slice(-4) : "")} has no ${esc(r.symMissing)} symbol. No trading takes place.`)}</p>
+<div class="body"><div class="err">${ICO.infoBad}<span><b>${ultima ? T("Lege bei Ultima Markets zusätzlich ein Live-Konto vom Typ RAW ECN für MetaTrader 5 in USD an.", "Open an additional live account of type RAW ECN for MetaTrader 5 in USD at Ultima Markets.") : T("Bitte prüfe den Kontotyp bei deinem Broker.", "Please check the account type with your broker.")}</b> ${T("Öffne danach diesen Installer noch einmal und gib die neuen Zugangsdaten aus der E-Mail ein. Dein bisheriges Konto bleibt bestehen.", "Then open this installer again and enter the new credentials from the e-mail. Your existing account stays as it is.")}</span></div>
+<p class="note">${ICO.info}<span>${T("Der Kundenbereich zeigt dir die Schritte ebenfalls an.", "The customer area shows you the steps as well.")}</span></p></div>
+${foot(`<span class="meta">${T("Hilfe", "Help")}: ${SUPPORT}</span>`, `<button class="btn s" data-act="quit">${T("Schließen", "Close")}</button><button class="btn g" data-act="portal">${T("Zum Kundenbereich", "Customer area")} →</button>`)}`;
+    }
     if (r.expertErr) {   // 1.0.2: Installation fertig, aber der EA laeuft auf diesem Rechner nicht
       const why = r.expertErr === "cpu"
         ? T("Die aktuelle EA-Datei verlangt einen Prozessor mit AVX2. Dieser Rechner bzw. MetaTrader auf dem Mac (Rosetta) unterstützt das nicht, deshalb hat MetaTrader den EA nicht geladen.", "The current EA file requires a processor with AVX2. This computer or MetaTrader on the Mac (Rosetta) does not support it, so MetaTrader did not load the EA.")

@@ -39,6 +39,7 @@ type State struct {
 	PendingEA   string `json:"pendingEa,omitempty"`
 	LastReport  string `json:"lastReport,omitempty"`
 	ReportedOn  bool   `json:"reportedOnline,omitempty"`
+	SymMissing  string `json:"symMissing,omitempty"` // 1.0.8: Symbol der Admin-Zuordnung fehlt auf dem Konto
 }
 
 func Suffix(key string) string { return key[:3] + "-" + key[len(key)-4:] }

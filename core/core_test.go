@@ -328,7 +328,7 @@ func TestSymbolProbe(t *testing.T) {
 	}
 	_ = d
 	// Admin-Zuordnung hat Vorrang
-	if c := SymbolCandidates("btc", "UltimaMarkets-Live 1", "BTCUSD", []SymMap{{Match: "ultima", Btc: "BTCUSD+"}}); c[0] != "BTCUSD+" || c[1] != "BTCUSD" {
+	if c := SymbolCandidates("btc", "UltimaMarkets-Live 1", "BTCUSD", []SymMap{{Match: "ultima", Btc: "BTCUSD+"}}); len(c) != 1 || c[0] != "BTCUSD+" {
 		t.Fatalf("cands %v", c)
 	}
 	if c := SymbolCandidates("dax", "X", "GER40", nil); c[0] != "GER40" || c[1] != "GER40+" {
@@ -369,6 +369,33 @@ func TestMappedSymbolFirstStart(t *testing.T) {
 	res, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "UltimaMarkets-Live 1", Password: "p"}, func(Ev) {})
 	if err != nil || res.Symbol != "BTCUSD+" || Starts != n+1 {
 		t.Fatalf("mapped first start: %v %+v starts %d", err, res, Starts-n)
+	}
+}
+
+func TestMappedSymbolMissing(t *testing.T) {
+	f, _ := setup(t)
+	FakeSyms = map[string]bool{"BTCUSD": true} // Standard-Konto: nur BTCUSD, kein BTCUSD+
+	dir := InstanceDir("BTC-GOOD")
+	fakeLogin(dir, "'1': authorized on UltimaMarkets-Live 1 through X")
+	res, err := Install(context.Background(), InstallReq{Key: "BTC-GOOD-GOOD-GOOD", Login: "1", Server: "UltimaMarkets-Live 1", Password: "p"}, func(Ev) {})
+	if err != nil || res.SymMissing != "BTCUSD+" || res.Expert {
+		t.Fatalf("missing: %v %+v", err, res)
+	}
+	st := LoadState("BTC-GOOD-GOOD-GOOD")
+	if st.Symbol != "BTCUSD+" || st.SymMissing != "BTCUSD+" {
+		t.Fatalf("state %+v", st)
+	}
+	f.mu.Lock()
+	ph := strings.Join(f.phases, ",")
+	f.mu.Unlock()
+	if !strings.Contains(ph, "sym_missing") || strings.Contains(ph, "running") {
+		t.Fatalf("phases %s", ph)
+	}
+	// spaeter doch da -> Dienst meldet Entwarnung
+	os.MkdirAll(filepath.Join(dir, "Bases", "UltimaMarkets-Live 1", "history", "BTCUSD+"), 0o755)
+	AgentOnce(context.Background())
+	if LoadState("BTC-GOOD-GOOD-GOOD").SymMissing != "" {
+		t.Fatal("agent clear")
 	}
 }
 
