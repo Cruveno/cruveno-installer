@@ -212,6 +212,12 @@ func terminalPIDs(exe string) []uint32 {
 	return out
 }
 
+// BootUnix: Beginn der Sitzung. Unter Windows startet der Dienst (--agent --loop) bei jeder Anmeldung ueber den
+// Autostart neu; dessen Startzeit ist verlaesslicher als die Laufzeit des Rechners (Schnellstart = Ruhezustand).
+var agentStart = time.Now().Unix()
+
+func BootUnix() int64 { return agentStart }
+
 func IsRunning(dir string) bool { return len(terminalPIDs(filepath.Join(dir, "terminal64.exe"))) > 0 }
 
 func stopByPath(exe string) bool {

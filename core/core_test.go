@@ -253,11 +253,30 @@ func TestAgent(t *testing.T) {
 	if st.Pending != "" || st.EaVersion != "2026-11-20|5000" || Starts != n0+2 {
 		t.Fatalf("nach handelszeit: %+v", st)
 	}
-	// 4) MetaTrader beendet -> Dienst startet neu
+	// 4) 1.0.9: Kunde schliesst MetaTrader -> Dienst oeffnet es NICHT wieder, auch nicht bei Aenderungen
 	StopTerminal(dir)
+	n1 := Starts
 	AgentOnce(context.Background())
-	if !IsRunning(dir) {
-		t.Fatal("watchdog")
+	AgentOnce(context.Background())
+	if IsRunning(dir) || Starts != n1 {
+		t.Fatal("darf geschlossenes MetaTrader nicht wieder oeffnen")
+	}
+	f.mu.Lock()
+	f.prot = &Prot{Profile: "careful", Risk: 0.5, Day: 2, Tot: 6}
+	f.mu.Unlock()
+	AgentOnce(context.Background())
+	if IsRunning(dir) || Starts != n1 || !strings.Contains(ReadUTF16(set), "InpRiskPct=0.5") || LoadState("BTC-GOOD-GOOD-GOOD").Pending != "" {
+		t.Fatal("aenderung bei geschlossenem MetaTrader: nur Dateien, kein Start")
+	}
+	// 4b) Rechner neu gestartet -> einmal oeffnen
+	FakeBoot += 3600
+	AgentOnce(context.Background())
+	if !IsRunning(dir) || Starts != n1+1 {
+		t.Fatal("nach dem Hochfahren einmal starten")
+	}
+	AgentOnce(context.Background())
+	if Starts != n1+1 {
+		t.Fatal("nur einmal")
 	}
 	// 5) waehrend der Installer laeuft: Finger weg
 	StopTerminal(dir)

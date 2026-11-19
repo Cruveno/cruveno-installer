@@ -52,3 +52,8 @@ func StartTerminal(st *State) error {
 func OpenTerminal(st *State) error { return StartTerminal(st) }
 func InstallAgent() error          { return nil }
 func RemoveAgent() error           { return nil }
+
+// FakeBoot: simulierte Startzeit des Rechners (Tests)
+var FakeBoot int64 = 1_700_000_000
+
+func BootUnix() int64 { return FakeBoot }

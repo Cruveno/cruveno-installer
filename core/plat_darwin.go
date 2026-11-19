@@ -200,6 +200,19 @@ func unzipFind(zp, dst, ext string) (string, error) {
 // Prozess der eigenen Instanz: Befehlszeile enthaelt C:\Cruveno\MT5-<suffix>\terminal64.exe
 func pattern(dir string) string { return "Cruveno.MT5-" + filepath.Base(dir)[4:] + ".terminal64" }
 
+// BootUnix: Startzeit des Rechners (sysctl kern.boottime: "{ sec = 1763560000, usec = 0 } ...")
+func BootUnix() int64 {
+	out, err := exec.Command("sysctl", "-n", "kern.boottime").Output()
+	if err != nil {
+		return 0
+	}
+	var sec int64
+	if i := strings.Index(string(out), "sec = "); i >= 0 {
+		fmt.Sscanf(string(out)[i+6:], "%d", &sec)
+	}
+	return sec
+}
+
 func IsRunning(dir string) bool { return exec.Command("pgrep", "-f", pattern(dir)).Run() == nil }
 
 func StopTerminal(dir string) bool {

@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const Version = "1.0.8"
+const Version = "1.0.9"
 
 // Portal: Standard app.cruveno.com, zum Testen ueber CRUVENO_PORTAL umstellbar.
 func Portal() string {

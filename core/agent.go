@@ -69,6 +69,7 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 		}
 		os.Remove(pauseF)
 		add("Betrieb wieder auf diesem Rechner")
+		restart = true // ausdruecklich zurueck auf diesen Rechner: einmal starten
 	}
 	if err == nil && c.OK {
 		if p := c.Effective(); !p.Same(st.Prot) {
@@ -114,9 +115,23 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 		Status(ctx, st.Key, "running", "", st.Login)
 	}
 	running := IsRunning(st.Dir)
+	// 1.0.9: Der Dienst oeffnet MetaTrader nur noch (a) einmal nach dem Hochfahren des Rechners, (b) nach einem
+	// eigenen Neustart fuer ein Update und (c) bei der Rueckkehr aus der Cloud. Schliesst der Kunde MetaTrader,
+	// bleibt es geschlossen (bis zum naechsten Hochfahren oder bis er es selbst oeffnet).
+	newBoot := false
+	if b := BootUnix(); b > 0 {
+		if st.BootUnix == 0 || b-st.BootUnix > 120 || st.BootUnix-b > 120 {
+			newBoot = st.BootUnix != 0 // erster Durchlauf nach der Einrichtung: nur merken
+			st.BootUnix = b
+		}
+	}
+	if st.Running && !running && !newBoot {
+		add("MetaTrader wurde geschlossen – der Dienst öffnet es nicht von selbst")
+	}
 	if st.Pending != "" && (!QuietHour(now()) || !running) {
 		if running {
 			StopTerminal(st.Dir)
+			restart = true // nur wieder starten, was wir selbst beendet haben
 		}
 		if strings.Contains(st.Pending, "ea") {
 			cur := filepath.Join(st.Dir, "MQL5", "Experts", "Cruveno", st.EaFile)
@@ -127,9 +142,8 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 			st.PendingEA = ""
 		}
 		st.Pending = ""
-		restart = true
 	}
-	if restart || !IsRunning(st.Dir) {
+	if (restart || newBoot) && !IsRunning(st.Dir) {
 		ClearCharts(st.Dir)
 		if err := StartTerminal(st); err == nil {
 			add("MetaTrader gestartet")
@@ -137,6 +151,7 @@ func agentOne(ctx context.Context, st *State) (log []string) {
 			add("Start fehlgeschlagen: %v", err)
 		}
 	}
+	st.Running = IsRunning(st.Dir)
 	// Meldung an den Kundenbereich: bei Aenderungen sofort, sonst stuendlich
 	msg := strings.Join(log, "; ")
 	if msg != "" || st.LastReport < now().UTC().Add(-time.Hour).Format(time.RFC3339) {

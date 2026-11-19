@@ -40,6 +40,8 @@ type State struct {
 	LastReport  string `json:"lastReport,omitempty"`
 	ReportedOn  bool   `json:"reportedOnline,omitempty"`
 	SymMissing  string `json:"symMissing,omitempty"` // 1.0.8: Symbol der Admin-Zuordnung fehlt auf dem Konto
+	Running     bool   `json:"running,omitempty"`    // 1.0.9: lief MetaTrader beim letzten Durchlauf des Dienstes
+	BootUnix    int64  `json:"boot,omitempty"`       // 1.0.9: Startzeit des Rechners beim letzten Durchlauf
 }
 
 func Suffix(key string) string { return key[:3] + "-" + key[len(key)-4:] }
